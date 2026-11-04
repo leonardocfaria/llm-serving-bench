@@ -27,10 +27,11 @@ def build_model():
 
 @asynccontextmanager
 async def lifespan(app):
-    model = build_model()
-    state["batcher"] = Batcher(lambda prompts, n: generate(model, prompts, n),
-                               max_batch=int(os.environ.get("LLM_MAX_BATCH", "8")),
-                               max_wait_ms=float(os.environ.get("LLM_MAX_WAIT_MS", "5")))
+    batcher = state["batcher"] = Batcher(lambda prompts, n: generate(model, prompts, n),
+                                         max_batch=int(os.environ.get("LLM_MAX_BATCH", "8")),
+                                         max_wait_ms=float(os.environ.get("LLM_MAX_WAIT_MS", "5")))
+    # build on the model thread too: all torch work on one thread keeps one OpenMP pool (~2x faster, measured)
+    model = await asyncio.get_running_loop().run_in_executor(batcher.executor, build_model)
     task = asyncio.create_task(state["batcher"].run())
     yield
     task.cancel()

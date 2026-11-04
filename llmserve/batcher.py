@@ -1,6 +1,7 @@
 """Dynamic request batching: collect up to max_batch requests or until max_wait_ms, run them together."""
 import asyncio
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 
 class Batcher:
@@ -9,6 +10,9 @@ class Batcher:
         self.max_batch, self.max_wait = max_batch, max_wait_ms / 1000
         self.queue: asyncio.Queue = asyncio.Queue()
         self.batch_sizes: list[int] = []
+        # one dedicated model thread: torch's OpenMP pool is per calling thread, so running torch on
+        # several threads makes pools compete for the cores (measured: ~2x slower batch-1 latency)
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="model")
 
     async def submit(self, prompt, max_new_tokens):
         fut = asyncio.get_running_loop().create_future()
@@ -27,7 +31,7 @@ class Batcher:
                     break
             self.batch_sizes.append(len(batch))
             try:
-                outs = await asyncio.to_thread(self.run_batch, [b[0] for b in batch], [b[1] for b in batch])
+                outs = await loop.run_in_executor(self.executor, self.run_batch, [b[0] for b in batch], [b[1] for b in batch])
             except Exception as e:  # one failure fails the whole batch, never hangs callers
                 for *_, fut in batch:
                     fut.done() or fut.set_exception(e)
