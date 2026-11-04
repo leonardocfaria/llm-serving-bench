@@ -36,6 +36,8 @@ def start_server(env: dict, port: int) -> subprocess.Popen:
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "llmserve.server:app", "--port", str(port), "--log-level", "warning"],
                             env={**os.environ, **env}, cwd=Path(__file__).parent)
     for _ in range(100):
+        if proc.poll() is not None:
+            raise RuntimeError(f"server exited with code {proc.returncode}")
         try:
             if httpx.get(f"http://127.0.0.1:{port}/health").status_code == 200:
                 return proc
@@ -65,8 +67,8 @@ async def load(url: str, concurrency: int, n_requests: int, max_new: int) -> dic
         wall = time.perf_counter() - t0
         after = (await client.get(f"{url}/stats")).json()
     batches = after["batches"] - before["batches"]
-    served = after["mean_batch_size"] * after["batches"] - before["mean_batch_size"] * before["batches"]
-    q = statistics.quantiles(latencies, n=20)
+    served = after["requests"] - before["requests"]
+    q = statistics.quantiles(latencies, n=20, method="inclusive")  # exclusive extrapolates past max on small n
     return {"concurrency": concurrency, "requests": n_requests, "p50_ms": statistics.median(latencies) * 1000,
             "p95_ms": q[18] * 1000, "tokens_per_s": tokens / wall, "req_per_s": n_requests / wall,
             "mean_batch": served / batches}
@@ -131,8 +133,8 @@ def main(quick: bool = False, out: str = "results", max_new: int = 32) -> dict:
         proc = start_server({**env, **extra}, port)
         try:
             url = f"http://127.0.0.1:{port}"
-            asyncio.run(load(url, 2, 4, max_new))  # warm-up
-            results[name] = [asyncio.run(load(url, c, max(8, 3 * c), max_new)) for c in levels]
+            asyncio.run(load(url, max(levels), 2 * max(levels), max_new))  # warm-up at every batch size up to the max
+            results[name] = [asyncio.run(load(url, c, max(20, 3 * c), max_new)) for c in levels]
             print(name, json.dumps(results[name][-1]))
         finally:
             proc.terminate()

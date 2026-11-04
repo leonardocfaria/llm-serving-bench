@@ -9,6 +9,6 @@ Build "LLM inference serving with batching and benchmarks". Serve a small open m
 - [x] quantised vs fp32 comparison committed
 - [x] Tests pass with one command; CI workflow runs them
 - [x] README with setup, usage, architecture and results
-- [ ] Self code review done
+- [x] Self code review done
 - [ ] Draft PR open
 

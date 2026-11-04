@@ -68,9 +68,9 @@ class TinyGPT(nn.Module):
 def generate(model, prompts: list[list[int]], max_new_tokens, use_cache: bool = True) -> list[list[int]]:
     """Greedy decode a batch of prompts of any lengths. max_new_tokens: int or one per prompt."""
     n_new = [max_new_tokens] * len(prompts) if isinstance(max_new_tokens, int) else list(max_new_tokens)
-    if any(not p for p in prompts) or max(len(p) + n for p, n in zip(prompts, n_new)) > model.ctx:
-        raise ValueError(f"prompts must be non-empty and prompt + new tokens <= {model.ctx}")
     L, steps = max(map(len, prompts)), max(n_new)
+    if any(not p for p in prompts) or L + steps > model.ctx:  # the whole batch decodes to L + steps
+        raise ValueError(f"prompts must be non-empty and longest prompt + most new tokens <= {model.ctx}")
     ids = torch.tensor([[0] * (L - len(p)) + p for p in prompts])
     mask = torch.tensor([[False] * (L - len(p)) + [True] * len(p) for p in prompts])
     out = []

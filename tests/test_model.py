@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from llmserve.model import TinyGPT, decode, encode, generate, quantize
@@ -25,6 +26,12 @@ def test_batched_padded_matches_one_by_one():
     single = [generate(m, [p], n)[0] for p, n in zip(PROMPTS, [5, 12, 8])]
     assert batched == single
     assert [len(o) for o in batched] == [5, 12, 8]
+
+
+def test_context_limit_checked_over_whole_batch():
+    m = small()  # ctx 128: each request fits alone, but the batch decodes to 120 + 30
+    with pytest.raises(ValueError):
+        generate(m, [[1] * 120, [1]], [1, 30])
 
 
 def test_deterministic_with_seed():

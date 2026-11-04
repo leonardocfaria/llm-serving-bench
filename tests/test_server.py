@@ -20,6 +20,7 @@ def test_generate_and_validation(client):
     assert r.status_code == 200 and r.json()["tokens"] == 7
     assert client.post("/generate", json={"prompt": "", "max_new_tokens": 7}).status_code == 422
     assert client.post("/generate", json={"prompt": "x", "max_new_tokens": 999}).status_code == 422
+    assert client.post("/generate", json={"prompt": "é" * 200, "max_new_tokens": 1}).status_code == 422  # 400 bytes
 
 
 def test_concurrent_requests_are_batched(client):

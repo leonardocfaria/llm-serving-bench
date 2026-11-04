@@ -9,7 +9,7 @@ class Batcher:
         self.run_batch = run_batch  # (prompts, max_new_tokens list) -> outputs, called in a worker thread
         self.max_batch, self.max_wait = max_batch, max_wait_ms / 1000
         self.queue: asyncio.Queue = asyncio.Queue()
-        self.batch_sizes: list[int] = []
+        self.batch_sizes: Counter = Counter()  # batch size -> count
         # one dedicated model thread: torch's OpenMP pool is per calling thread, so running torch on
         # several threads makes pools compete for the cores (measured: ~2x slower batch-1 latency)
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="model")
@@ -29,7 +29,7 @@ class Batcher:
                     batch.append(await asyncio.wait_for(self.queue.get(), left))
                 except TimeoutError:
                     break
-            self.batch_sizes.append(len(batch))
+            self.batch_sizes[len(batch)] += 1
             try:
                 outs = await loop.run_in_executor(self.executor, self.run_batch, [b[0] for b in batch], [b[1] for b in batch])
             except Exception as e:  # one failure fails the whole batch, never hangs callers
@@ -40,6 +40,6 @@ class Batcher:
                 fut.done() or fut.set_result(out)  # done() = caller went away (cancelled)
 
     def stats(self) -> dict:
-        n = len(self.batch_sizes)
-        return {"batches": n, "mean_batch_size": sum(self.batch_sizes) / n if n else 0.0,
-                "histogram": dict(sorted(Counter(self.batch_sizes).items()))}
+        n, served = self.batch_sizes.total(), sum(s * c for s, c in self.batch_sizes.items())
+        return {"batches": n, "requests": served, "mean_batch_size": served / n if n else 0.0,
+                "histogram": dict(sorted(self.batch_sizes.items()))}

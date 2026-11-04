@@ -22,13 +22,13 @@ def test_groups_concurrent_requests_and_routes_results():
     jobs = [([i], i) for i in range(10)]
     out = asyncio.run(_run(b, jobs))
     assert out == [[i, i] for i in range(10)]
-    assert b.batch_sizes == [4, 4, 2]
+    assert b.batch_sizes == {4: 2, 2: 1}
 
 
 def test_max_batch_one_is_naive_serving():
     b = Batcher(echo_batch, max_batch=1, max_wait_ms=50)
     asyncio.run(_run(b, [([1], 1), ([2], 2), ([3], 3)]))
-    assert b.batch_sizes == [1, 1, 1]
+    assert b.batch_sizes == {1: 3}
 
 
 def test_errors_reach_every_caller_in_the_batch():
